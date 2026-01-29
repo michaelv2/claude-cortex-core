@@ -24,24 +24,11 @@
 - ❌ Contradiction detection (active analysis)
 - ❌ Brain worker (background tick processing)
 - ❌ Service installer (auto-start system)
-- ❌ Hook scripts (SessionStart, PreCompact)
+- ✅ Hook scripts (SessionStart, PreCompact) - **Now re-added as optional feature**
 
-The original **claude-cortex** had two hooks that provided automatic saving:
+The original **claude-cortex** had two hooks that provided automatic saving. These have been re-implemented in **claude-cortex-core** as standalone executables that maintain the minimal philosophy.
 
-1. **PreCompact Hook** - Before every context compaction (manual or auto), it would:
-  - Scan the conversation for high-salience content
-  - Auto-extract decisions, fixes, learnings, patterns
-  - Save up to 5 memories per compaction (threshold: salience ≥ 0.25-0.35)
-  - Tag them with "auto-extracted"
-2. **SessionStart Hook** - At every new session:
-  - Auto-load project context from memory
-  - Show architecture decisions, patterns, preferences
-  - Display up to 15 high-salience memories
-
-These were removed from **claude-cortex-core** because:
-- They added complexity (hook scripts, setup command)
-- They required Claude Code integration (hooks in ~/.claude/settings.json)
-- The goal was minimal, library-like simplicity
+These are **completely optional** and can be enabled by configuring Claude Code hooks. See the "Automated Memory Hooks" section below for setup instructions.
 
 ## What Stays
 
@@ -93,6 +80,123 @@ npm run build
   }
 }
 ```
+
+## Automated Memory Hooks (Optional)
+
+Claude Cortex Core now includes **optional automated memory hooks** that were inspired by the original claude-cortex. These hooks can automatically extract and restore memories without manual tool calls.
+
+### Available Hooks
+
+#### 1. PreCompact Hook
+Automatically extracts memories before context compaction:
+- Scans conversation for high-salience content
+- Auto-extracts decisions, fixes, learnings, patterns
+- Saves up to 5 memories per compaction
+- Tags with "auto-extracted"
+
+#### 2. SessionStart Hook
+Automatically restores context at session start:
+- Loads project-specific context
+- Shows architecture decisions, patterns, preferences
+- Displays up to 15 high-salience memories
+
+### Setup
+
+1. **Build the project** (hooks are compiled with the main server):
+```bash
+npm run build
+```
+
+2. **Configure hooks in Claude Code** (`~/.claude/settings.json`):
+```json
+{
+  "mcpServers": {
+    "memory": {
+      "command": "node",
+      "args": ["/path/to/claude-cortex-core/dist/index.js"]
+    }
+  },
+  "hooks": {
+    "sessionStart": {
+      "command": "node",
+      "args": ["/path/to/claude-cortex-core/dist/bin/session-start.js"]
+    },
+    "preCompact": {
+      "command": "node",
+      "args": ["/path/to/claude-cortex-core/dist/bin/pre-compact.js"]
+    }
+  }
+}
+```
+
+3. **Optional: Customize hook behavior** (`~/.claude-cortex/hooks.json`):
+```json
+{
+  "preCompact": {
+    "enabled": true,
+    "minSalience": 0.30,
+    "maxMemoriesPerCompact": 5,
+    "categories": ["architecture", "pattern", "error", "learning"],
+    "autoTag": "auto-extracted",
+    "timeout": 5000
+  },
+  "sessionStart": {
+    "enabled": true,
+    "maxMemories": 15,
+    "minSalience": 0.5,
+    "categories": ["architecture", "pattern", "preference"],
+    "format": "summary",
+    "timeout": 3000
+  }
+}
+```
+
+Copy `hooks.json.example` to `~/.claude-cortex/hooks.json` as a starting point.
+
+### Hook Configuration Options
+
+**PreCompact Hook**:
+- `enabled` - Enable/disable the hook (default: true)
+- `minSalience` - Minimum importance threshold (default: 0.30)
+- `maxMemoriesPerCompact` - Max memories to save per compaction (default: 5)
+- `categories` - Which categories to auto-extract (default: architecture, pattern, error, learning)
+- `autoTag` - Tag added to auto-extracted memories (default: "auto-extracted")
+- `timeout` - Max processing time in ms (default: 5000)
+
+**SessionStart Hook**:
+- `enabled` - Enable/disable the hook (default: true)
+- `maxMemories` - Max context items to load (default: 15)
+- `minSalience` - Minimum importance threshold (default: 0.5)
+- `categories` - Which categories to include (default: architecture, pattern, preference)
+- `format` - Output format: "summary", "detailed", or "minimal" (default: "summary")
+- `timeout` - Max processing time in ms (default: 3000)
+
+### Benefits & Trade-offs
+
+**Benefits**:
+- Automatic memory saving without manual `remember()` calls
+- Context automatically restored at session start
+- Configurable behavior per project
+- Fail-safe: Hook failures never break Claude Code
+
+**Trade-offs**:
+- Pattern matching may extract false positives
+- Adds 1-3s latency to compaction
+- Requires Claude Code hooks support
+- Less control vs manual saving
+
+### Disabling Hooks
+
+To disable without removing from Claude Code config, set `enabled: false` in `~/.claude-cortex/hooks.json`:
+
+```json
+{
+  "preCompact": { "enabled": false },
+  "sessionStart": { "enabled": false }
+}
+```
+
+Or remove the `hooks` section from `~/.claude/settings.json` entirely.
 
 ## Usage Examples
 

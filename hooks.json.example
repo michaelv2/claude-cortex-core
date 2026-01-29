@@ -1,0 +1,18 @@
+{
+  "preCompact": {
+    "enabled": true,
+    "minSalience": 0.30,
+    "maxMemoriesPerCompact": 5,
+    "categories": ["architecture", "pattern", "error", "learning"],
+    "autoTag": "auto-extracted",
+    "timeout": 5000
+  },
+  "sessionStart": {
+    "enabled": true,
+    "maxMemories": 15,
+    "minSalience": 0.5,
+    "categories": ["architecture", "pattern", "preference"],
+    "format": "summary",
+    "timeout": 3000
+  }
+}

@@ -33,7 +33,9 @@
     "typescript": "^5.6.0"
   },
   "bin": {
-    "claude-cortex": "dist/index.js"
+    "claude-cortex": "dist/index.js",
+    "claude-cortex-session-start": "dist/bin/session-start.js",
+    "claude-cortex-pre-compact": "dist/bin/pre-compact.js"
   },
   "files": [
     "dist"
