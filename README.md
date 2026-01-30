@@ -72,7 +72,7 @@ npm run build
   "mcpServers": {
     "memory": {
       "command": "node",
-      "args": ["/home/maqo/projects/claude-cortex-core/dist/index.js"],
+      "args": ["/path/to/claude-cortex-core/dist/index.js"],
       "env": {}
     }
   }
@@ -242,7 +242,7 @@ Memories are automatically scoped to the project detected from `process.cwd()`:
 ```bash
 # Current project
 get_project()
-# → "claude-cortex-core" (detected from /home/maqo/projects/claude-cortex-core)
+# → "claude-cortex-core" (detected from /path/to/claude-cortex-core)
 
 # Switch to global scope
 set_project({ project: "*" })
