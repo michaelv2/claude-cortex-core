@@ -115,14 +115,28 @@ npm run build
     }
   },
   "hooks": {
-    "sessionStart": {
-      "command": "node",
-      "args": ["/path/to/claude-cortex-core/dist/bin/session-start.js"]
-    },
-    "preCompact": {
-      "command": "node",
-      "args": ["/path/to/claude-cortex-core/dist/bin/pre-compact.js"]
-    }
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["/path/to/claude-cortex-core/dist/bin/session-start.js"]
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["/path/to/claude-cortex-core/dist/bin/pre-compact.js"]
+          }
+        ]
+      }
+    ]
   }
 }
 ```
