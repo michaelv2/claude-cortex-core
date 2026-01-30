@@ -35,6 +35,22 @@ const MAX_CONTENT_SIZE = 10 * 1024;
 // Track truncation info globally for the last addMemory call
 let lastTruncationInfo: { wasTruncated: boolean; originalLength: number; truncatedLength: number } | null = null;
 
+const statementCache = new WeakMap<object, Map<string, any>>();
+
+function getStatement(db: ReturnType<typeof getDatabase>, key: string, sql: string) {
+  let cache = statementCache.get(db as unknown as object);
+  if (!cache) {
+    cache = new Map<string, any>();
+    statementCache.set(db as unknown as object, cache);
+  }
+  let stmt = cache.get(key);
+  if (!stmt) {
+    stmt = db.prepare(sql);
+    cache.set(key, stmt);
+  }
+  return stmt;
+}
+
 /**
  * Truncate content if it exceeds max size
  * Returns both the content and truncation info
@@ -153,7 +169,7 @@ export function addMemory(
     (detectGlobalPattern(input.content, category, tags) ? 'global' : 'project');
   const transferable = input.transferable ?? (scope === 'global' ? 1 : 0);
 
-  const stmt = db.prepare(`
+  const stmt = getStatement(db, 'insertMemory', `
     INSERT INTO memories (type, category, title, content, project, tags, salience, metadata, scope, transferable)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
@@ -221,7 +237,8 @@ export function addMemory(
  */
 export function getMemoryById(id: number): Memory | null {
   const db = getDatabase();
-  const row = db.prepare('SELECT * FROM memories WHERE id = ?').get(id) as Record<string, unknown> | undefined;
+  const stmt = getStatement(db, 'selectMemoryById', 'SELECT * FROM memories WHERE id = ?');
+  const row = stmt.get(id) as Record<string, unknown> | undefined;
   if (!row) return null;
   return rowToMemory(row);
 }
@@ -740,6 +757,36 @@ export async function searchMemories(
   }
 
   return finalResults;
+}
+
+/**
+ * Lightweight fetch for duplicate detection (no scoring, no side effects)
+ */
+export function getMemorySummariesForDedupe(options: {
+  project?: string;
+  limit?: number;
+  includeGlobal?: boolean;
+} = {}): Array<{ title: string; content: string }> {
+  const db = getDatabase();
+  const limit = options.limit ?? 100;
+  const includeGlobal = options.includeGlobal ?? true;
+
+  let sql = 'SELECT title, content FROM memories';
+  const params: unknown[] = [];
+
+  if (options.project) {
+    if (includeGlobal) {
+      sql += " WHERE (project = ? OR scope = 'global')";
+    } else {
+      sql += ' WHERE project = ?';
+    }
+    params.push(options.project);
+  }
+
+  sql += ' ORDER BY salience DESC, last_accessed DESC LIMIT ?';
+  params.push(limit);
+
+  return db.prepare(sql).all(...params) as Array<{ title: string; content: string }>;
 }
 
 /**

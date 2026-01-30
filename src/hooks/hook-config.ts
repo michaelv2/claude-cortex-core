@@ -3,7 +3,7 @@
  * Loads and validates hook configuration from ~/.claude-cortex/hooks.json
  */
 
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync, existsSync, statSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import { HookConfig, PreCompactConfig, SessionStartConfig } from './types.js';
@@ -33,6 +33,9 @@ const DEFAULT_CONFIG: HookConfig = {
   preCompact: DEFAULT_PRE_COMPACT_CONFIG,
   sessionStart: DEFAULT_SESSION_START_CONFIG,
 };
+
+let cachedConfig: HookConfig | null = null;
+let cachedMtimeMs: number | null = null;
 
 /**
  * Get the path to the hook configuration file
@@ -113,10 +116,17 @@ export function loadHookConfig(): HookConfig {
 
   // Return defaults if config file doesn't exist
   if (!existsSync(configPath)) {
+    cachedConfig = DEFAULT_CONFIG;
+    cachedMtimeMs = null;
     return DEFAULT_CONFIG;
   }
 
   try {
+    const mtimeMs = statSync(configPath).mtimeMs;
+    if (cachedConfig && cachedMtimeMs === mtimeMs) {
+      return cachedConfig;
+    }
+
     const configData = readFileSync(configPath, 'utf-8');
     const userConfig = JSON.parse(configData) as Partial<HookConfig>;
 
@@ -124,13 +134,20 @@ export function loadHookConfig(): HookConfig {
     const errors = validateConfig(userConfig);
     if (errors.length > 0) {
       console.error('[Hook Config] Validation errors, using defaults:', errors);
+      cachedConfig = DEFAULT_CONFIG;
+      cachedMtimeMs = mtimeMs;
       return DEFAULT_CONFIG;
     }
 
     // Deep merge with defaults
-    return deepMerge(DEFAULT_CONFIG, userConfig);
+    const merged = deepMerge(DEFAULT_CONFIG, userConfig);
+    cachedConfig = merged;
+    cachedMtimeMs = mtimeMs;
+    return merged;
   } catch (error) {
     console.error('[Hook Config] Failed to load config, using defaults:', error);
+    cachedConfig = DEFAULT_CONFIG;
+    cachedMtimeMs = null;
     return DEFAULT_CONFIG;
   }
 }

@@ -17,7 +17,7 @@ import {
 } from '../hooks/utils.js';
 import { extractMemoriesFromConversation } from '../hooks/extraction.js';
 import { initDatabase } from '../database/init.js';
-import { addMemory, searchMemories } from '../memory/store.js';
+import { addMemory, getMemorySummariesForDedupe } from '../memory/store.js';
 
 /**
  * Main PreCompact hook logic
@@ -54,16 +54,12 @@ async function runPreCompactHook(input: HookInput): Promise<PreCompactOutput> {
   // Initialize database
   initDatabase();
 
-  // Search for existing memories to avoid duplicates
-  const searchResults = await searchMemories({
-    query: '',
+  // Fetch existing memories to avoid duplicates (no scoring, no side effects)
+  const existingMemories = getMemorySummariesForDedupe({
     project: context.project,
     limit: 100,
+    includeGlobal: true,
   });
-  const existingMemories = searchResults.map((r: any) => ({
-    title: r.memory.title,
-    content: r.memory.content
-  }));
 
   // Extract memories from conversation
   const extractedMemories = await extractMemoriesFromConversation(

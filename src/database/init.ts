@@ -18,6 +18,7 @@ let lockFilePath: string | null = null;
 // Anti-bloat: Database size limits
 const MAX_DB_SIZE = 100 * 1024 * 1024; // 100MB hard limit
 const WARN_DB_SIZE = 50 * 1024 * 1024; // 50MB warning threshold
+const SCHEMA_VERSION = 1;
 
 /**
  * Expand ~ to home directory
@@ -93,16 +94,21 @@ export function initDatabase(dbPath?: string): Database.Database {
 
   // Run migrations FIRST for existing databases
   // This ensures columns exist before schema tries to create indexes on them
-  runMigrations(db);
+  const currentVersion = db.pragma('user_version', { simple: true }) as number;
+  if (currentVersion < SCHEMA_VERSION) {
+    runMigrations(db);
 
-  // Run schema (uses IF NOT EXISTS, safe for existing tables and indexes)
-  const schemaPath = join(__dirname, 'schema.sql');
-  if (existsSync(schemaPath)) {
-    const schema = readFileSync(schemaPath, 'utf-8');
-    db.exec(schema);
-  } else {
-    // Inline schema if file not found (for bundled deployment)
-    db.exec(getInlineSchema());
+    // Run schema (uses IF NOT EXISTS, safe for existing tables and indexes)
+    const schemaPath = join(__dirname, 'schema.sql');
+    if (existsSync(schemaPath)) {
+      const schema = readFileSync(schemaPath, 'utf-8');
+      db.exec(schema);
+    } else {
+      // Inline schema if file not found (for bundled deployment)
+      db.exec(getInlineSchema());
+    }
+
+    db.pragma(`user_version = ${SCHEMA_VERSION}`);
   }
 
   return db;
