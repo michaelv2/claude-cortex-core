@@ -1,6 +1,6 @@
 # Claude Cortex Core
 
-**Claude Cortex Core** is a minimal, production-ready MCP (Model Context Protocol) server that gives Claude Code persistent brain-like memory. It's a stripped-down fork of `claude-cortex` that removes all non-essential subsystems while preserving the complete remember/recall/forget/consolidate pipeline.
+**Claude Cortex Core** is a minimal, production-ready MCP (Model Context Protocol) server that gives Claude Code persistent brain-like memory. It's a stripped-down fork of [`claude-cortex`](https://github.com/mkdelta221/claude-cortex) that removes all non-essential subsystems while preserving the complete remember/recall/forget/consolidate pipeline.
 
 ## Key Stats
 
