@@ -54,30 +54,25 @@ rather than relying on automatic heuristics.
 ## Installation & Setup
 
 ```bash
-# Navigate to the new project
-cd ~/projects/claude-cortex-core
+# Clone or download the repository
+git clone https://github.com/michaelv2/claude-cortex-core.git
+cd claude-cortex-core
 
 # Install dependencies
 npm install
 
-# Build
+# Build the project
 npm run build
 
-# Add to Claude Code MCP config
-# Edit ~/.claude/settings.json and add:
+# Add MCP server to Claude Code (use absolute path)
+claude mcp add memory node $(pwd)/dist/index.js
+
+# Verify it's connected
+claude mcp list
+# Should show: memory: ... - ✓ Connected
 ```
 
-```json
-{
-  "mcpServers": {
-    "memory": {
-      "command": "node",
-      "args": ["/path/to/claude-cortex-core/dist/index.js"],
-      "env": {}
-    }
-  }
-}
-```
+**Important**: Use the `claude mcp add` command rather than manually editing config files. Claude Code stores MCP servers in `~/.claude.json` and the CLI command ensures proper registration.
 
 ## Automated Memory Hooks (Optional)
 
@@ -105,23 +100,21 @@ Automatically restores context at session start:
 npm run build
 ```
 
-2. **Configure hooks in Claude Code** (`~/.claude/settings.json`):
+2. **Add the MCP server** (if not already done):
+```bash
+claude mcp add memory node $(pwd)/dist/index.js
+```
+
+3. **Configure hooks in Claude Code** by editing `~/.claude/settings.json`:
 ```json
 {
-  "mcpServers": {
-    "memory": {
-      "command": "node",
-      "args": ["/path/to/claude-cortex-core/dist/index.js"]
-    }
-  },
   "hooks": {
     "SessionStart": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "node",
-            "args": ["/path/to/claude-cortex-core/dist/bin/session-start.js"]
+            "command": "node /path/to/claude-cortex-core/dist/bin/session-start.js"
           }
         ]
       }
@@ -131,8 +124,7 @@ npm run build
         "hooks": [
           {
             "type": "command",
-            "command": "node",
-            "args": ["/path/to/claude-cortex-core/dist/bin/pre-compact.js"]
+            "command": "node /path/to/claude-cortex-core/dist/bin/pre-compact.js"
           }
         ]
       }
@@ -140,6 +132,8 @@ npm run build
   }
 }
 ```
+
+**Note**: Replace `/path/to/claude-cortex-core` with your actual installation path. The MCP server should be added using `claude mcp add` (step 2), not manually in settings.json.
 
 3. **Optional: Customize hook behavior** (`~/.claude-cortex/hooks.json`):
 ```json
@@ -209,6 +203,51 @@ To disable without removing from Claude Code config, set `enabled: false` in `~/
 ```
 
 Or remove the `hooks` section from `~/.claude/settings.json` entirely.
+
+## Troubleshooting
+
+### MCP Server Not Connecting
+
+If you see "No MCP servers configured" after setup:
+
+1. **Verify the server was added correctly**:
+```bash
+claude mcp list
+# Should show: memory: ... - ✓ Connected
+```
+
+2. **If not listed, add it using the CLI** (don't edit config files manually):
+```bash
+cd /path/to/claude-cortex-core
+claude mcp add memory node $(pwd)/dist/index.js
+```
+
+3. **Check server health**:
+```bash
+claude mcp get memory
+# Should show: Status: ✓ Connected
+```
+
+4. **Test server manually**:
+```bash
+cd /path/to/claude-cortex-core
+echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' | node dist/index.js
+# Should return JSON response with server info
+```
+
+5. **Rebuild if needed**:
+```bash
+npm run build
+claude mcp remove memory
+claude mcp add memory node $(pwd)/dist/index.js
+```
+
+### Common Issues
+
+- **"No MCP server found"**: Use `claude mcp add` instead of manually editing config files
+- **Server not in list**: MCP servers are stored in `~/.claude.json` (project-specific) or global config, not `~/.claude/settings.json`
+- **Build errors**: Ensure you have Node.js ≥18.0.0 and ran `npm install`
+- **Permission denied**: Make sure `dist/index.js` is readable (`chmod +r dist/index.js`)
 
 ## Usage Examples
 
