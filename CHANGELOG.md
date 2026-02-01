@@ -52,5 +52,5 @@ Initial release of claude-cortex-core as a minimalist fork of claude-cortex.
 - API server
 - All non-essential dependencies
 
-[Unreleased]: https://github.com/yourusername/claude-cortex-core/compare/v2.0.0...HEAD
-[2.0.0]: https://github.com/yourusername/claude-cortex-core/releases/tag/v2.0.0
+[Unreleased]: https://github.com/michaelv2/claude-cortex-core/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/michaelv2/claude-cortex-core/releases/tag/v2.0.0
