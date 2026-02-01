@@ -134,7 +134,7 @@ git cherry-pick -x <commit-hash>  # Adds "(cherry picked from commit ...)" to me
 - **Reviewed commit 16ea0ea (security fixes):** Not applicable - all fixes in removed components
 - **Applied:** Added `prepublishOnly` script to package.json (ensures build before npm publish)
 
-### Next Sync Due: 2025-02-28
+### Next Sync Due: 2026-02-28
 
 ---
 
