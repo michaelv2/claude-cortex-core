@@ -110,8 +110,8 @@ export const DEFAULT_CONFIG: MemoryConfig = {
   reinforcementFactor: 1.2,
   salienceThreshold: 0.2, // Lowered from 0.3 to match reduced base salience (0.25)
   consolidationThreshold: 0.6,
-  maxShortTermMemories: 100,
-  maxLongTermMemories: 1000,
+  maxShortTermMemories: 250,
+  maxLongTermMemories: 5000,
   autoConsolidateHours: 4,
 };
 
