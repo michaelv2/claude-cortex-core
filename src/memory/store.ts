@@ -35,22 +35,6 @@ const MAX_CONTENT_SIZE = 10 * 1024;
 // Track truncation info globally for the last addMemory call
 let lastTruncationInfo: { wasTruncated: boolean; originalLength: number; truncatedLength: number } | null = null;
 
-const statementCache = new WeakMap<object, Map<string, any>>();
-
-function getStatement(db: ReturnType<typeof getDatabase>, key: string, sql: string) {
-  let cache = statementCache.get(db as unknown as object);
-  if (!cache) {
-    cache = new Map<string, any>();
-    statementCache.set(db as unknown as object, cache);
-  }
-  let stmt = cache.get(key);
-  if (!stmt) {
-    stmt = db.prepare(sql);
-    cache.set(key, stmt);
-  }
-  return stmt;
-}
-
 /**
  * Truncate content if it exceeds max size
  * Returns both the content and truncation info
@@ -94,8 +78,8 @@ function escapeFts5Query(query: string): string {
         return `"${term}"`;
       }
       // If term contains special FTS5 characters, quote it
-      // Including: - : * ^ ( ) & | . and quotes
-      if (/[-:*^()&|.]/.test(term) || term.includes('"')) {
+      // Including: - : * ^ ( ) & | . / , { } + and quotes
+      if (/[-:*^()&|./,{}+]/.test(term) || term.includes('"')) {
         // Escape existing quotes and wrap in quotes
         return `"${term.replace(/"/g, '""')}"`;
       }
@@ -169,7 +153,7 @@ export function addMemory(
     (detectGlobalPattern(input.content, category, tags) ? 'global' : 'project');
   const transferable = input.transferable ?? (scope === 'global' ? 1 : 0);
 
-  const stmt = getStatement(db, 'insertMemory', `
+  const stmt = db.prepare(`
     INSERT INTO memories (type, category, title, content, project, tags, salience, metadata, scope, transferable)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
@@ -237,7 +221,7 @@ export function addMemory(
  */
 export function getMemoryById(id: number): Memory | null {
   const db = getDatabase();
-  const stmt = getStatement(db, 'selectMemoryById', 'SELECT * FROM memories WHERE id = ?');
+  const stmt = db.prepare('SELECT * FROM memories WHERE id = ?');
   const row = stmt.get(id) as Record<string, unknown> | undefined;
   if (!row) return null;
   return rowToMemory(row);
@@ -593,11 +577,24 @@ export async function searchMemories(
   options: SearchOptions,
   config: MemoryConfig = DEFAULT_CONFIG
 ): Promise<SearchResult[]> {
-  const db = getDatabase();
   const limit = options.limit || 20;
-  const includeGlobal = options.includeGlobal ?? true;
+  const keywordResults = await keywordSearch(options, config, limit);
+  return keywordResults.map(r => ({
+    memory: r.memory,
+    relevanceScore: r.score,
+  }));
+}
 
-  // Detect query category for boosting
+/**
+ * Keyword-only search using FTS5
+ */
+async function keywordSearch(
+  options: SearchOptions,
+  config: MemoryConfig,
+  limit: number
+): Promise<Array<{ memory: Memory; score: number }>> {
+  const db = getDatabase();
+  const includeGlobal = options.includeGlobal ?? true;
   const detectedCategory = options.query ? detectQueryCategory(options.query) : null;
   const queryTags = options.query ? extractQueryTags(options.query) : [];
 
@@ -652,8 +649,8 @@ export async function searchMemories(
 
   const rows = db.prepare(sql).all(...params) as Record<string, unknown>[];
 
-  // Convert to SearchResult with computed scores
-  const results: SearchResult[] = rows.map(row => {
+  // Convert to results with computed scores
+  const results: Array<{ memory: Memory; score: number }> = rows.map(row => {
     const memory = rowToMemory(row);
     const decayedScore = calculateDecayedScore(memory, config);
     memory.decayedScore = decayedScore;
@@ -675,88 +672,21 @@ export async function searchMemories(
     // Tag match bonus
     const tagBoost = calculateTagScore(queryTags, memory.tags);
 
-    // Combined relevance score (simplified - no activation or vector boosts)
-    const relevanceScore = (
+    // Combined relevance score
+    const score = (
       ftsScore * 0.3 +
       decayedScore * 0.25 +
       calculatePriority(memory) * 0.1 +
       recencyBoost + categoryBoost + linkBoost + tagBoost
     );
 
-    return { memory, relevanceScore };
+    return { memory, score };
   });
 
   // Sort by relevance and filter out too-decayed memories
-  const sortedResults = results
+  return results
     .filter(r => options.includeDecayed || r.memory.decayedScore >= config.salienceThreshold)
-    .sort((a, b) => b.relevanceScore - a.relevanceScore);
-
-  // Reinforce top search results
-  const topResults = sortedResults.slice(0, 5);
-  for (const result of topResults) {
-    reinforceFromSearch(result.memory.id);
-  }
-
-  // Link co-returned search results (top 5 only)
-  if (topResults.length >= 2) {
-    for (let i = 0; i < topResults.length; i++) {
-      for (let j = i + 1; j < topResults.length; j++) {
-        const idA = topResults[i].memory.id;
-        const idB = topResults[j].memory.id;
-        const existing = db.prepare(
-          'SELECT strength FROM memory_links WHERE (source_id = ? AND target_id = ?) OR (source_id = ? AND target_id = ?)'
-        ).get(idA, idB, idB, idA) as any;
-
-        if (existing) {
-          const newStrength = Math.min(1.0, existing.strength + 0.03);
-          db.prepare(
-            'UPDATE memory_links SET strength = ? WHERE (source_id = ? AND target_id = ?) OR (source_id = ? AND target_id = ?)'
-          ).run(newStrength, idA, idB, idB, idA);
-        } else {
-          try {
-            db.prepare(
-              'INSERT INTO memory_links (source_id, target_id, relationship, strength) VALUES (?, ?, ?, ?)'
-            ).run(idA, idB, 'related', 0.2);
-          } catch { /* ignore duplicate */ }
-        }
-      }
-    }
-  }
-
-  // Enrich top result with search context
-  if (sortedResults.length > 0 && options.query && options.query.length > 30) {
-    const topResult = sortedResults[0];
-    const queryWords = new Set(options.query.toLowerCase().split(/\s+/).filter(w => w.length > 3));
-    const contentWords = new Set(topResult.memory.content.toLowerCase().split(/\s+/));
-    const newWords = [...queryWords].filter(w => !contentWords.has(w));
-
-    if (newWords.length > queryWords.size * 0.3 && options.query.length > 50) {
-      try {
-        enrichMemory(topResult.memory.id, options.query, 'search');
-      } catch { /* enrichment is best-effort */ }
-    }
-  }
-
-  // Look up contradictions for top results
-  const finalResults = sortedResults.slice(0, limit);
-  for (const result of finalResults) {
-    const contradictions = db.prepare(`
-      SELECT ml.strength,
-        CASE WHEN ml.source_id = ? THEN ml.target_id ELSE ml.source_id END as other_id
-      FROM memory_links ml
-      WHERE ml.relationship = 'contradicts'
-        AND (ml.source_id = ? OR ml.target_id = ?)
-    `).all(result.memory.id, result.memory.id, result.memory.id) as any[];
-
-    if (contradictions.length > 0) {
-      result.contradictions = contradictions.map(c => {
-        const other = db.prepare('SELECT title FROM memories WHERE id = ?').get(c.other_id) as any;
-        return { memoryId: c.other_id, title: other?.title || 'Unknown', score: c.strength };
-      });
-    }
-  }
-
-  return finalResults;
+    .sort((a, b) => b.score - a.score);
 }
 
 /**
@@ -936,13 +866,21 @@ export function getMemoryStats(project?: string): {
     params.push(project);
   }
 
-  const total = (db.prepare(`SELECT COUNT(*) as count FROM memories ${whereClause}`).get(...params) as { count: number }).count;
+  // Single query for type counts
+  const typeCounts = db.prepare(
+    `SELECT type, COUNT(*) as count FROM memories ${whereClause} GROUP BY type`
+  ).all(...params) as { type: string; count: number }[];
 
-  const shortTerm = (db.prepare(`SELECT COUNT(*) as count FROM memories ${whereClause} ${whereClause ? 'AND' : 'WHERE'} type = 'short_term'`).get(...params) as { count: number }).count;
-
-  const longTerm = (db.prepare(`SELECT COUNT(*) as count FROM memories ${whereClause} ${whereClause ? 'AND' : 'WHERE'} type = 'long_term'`).get(...params) as { count: number }).count;
-
-  const episodic = (db.prepare(`SELECT COUNT(*) as count FROM memories ${whereClause} ${whereClause ? 'AND' : 'WHERE'} type = 'episodic'`).get(...params) as { count: number }).count;
+  let total = 0;
+  let shortTerm = 0;
+  let longTerm = 0;
+  let episodic = 0;
+  for (const row of typeCounts) {
+    total += row.count;
+    if (row.type === 'short_term') shortTerm = row.count;
+    else if (row.type === 'long_term') longTerm = row.count;
+    else if (row.type === 'episodic') episodic = row.count;
+  }
 
   const avgResult = db.prepare(`SELECT AVG(salience) as avg FROM memories ${whereClause}`).get(...params) as { avg: number | null };
   const averageSalience = avgResult.avg || 0;

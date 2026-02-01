@@ -20,6 +20,23 @@ export function tokenize(text: string): Set<string> {
 }
 
 /**
+ * Calculate Jaccard similarity between two pre-tokenized sets
+ * Avoids redundant tokenization in hot loops (e.g., O(n²) merge clustering).
+ */
+export function jaccardFromSets(setA: Set<string>, setB: Set<string>): number {
+  if (setA.size === 0 && setB.size === 0) return 1.0;
+  if (setA.size === 0 || setB.size === 0) return 0.0;
+
+  let intersection = 0;
+  for (const word of setA) {
+    if (setB.has(word)) intersection++;
+  }
+
+  const union = setA.size + setB.size - intersection;
+  return intersection / union;
+}
+
+/**
  * Calculate Jaccard similarity between two texts
  * Returns a value between 0 (completely different) and 1 (identical)
  *
@@ -30,22 +47,7 @@ export function tokenize(text: string): Set<string> {
  * @returns Similarity score between 0 and 1
  */
 export function jaccardSimilarity(textA: string, textB: string): number {
-  const setA = tokenize(textA);
-  const setB = tokenize(textB);
-
-  if (setA.size === 0 && setB.size === 0) return 1.0;
-  if (setA.size === 0 || setB.size === 0) return 0.0;
-
-  // Calculate intersection
-  let intersection = 0;
-  for (const word of setA) {
-    if (setB.has(word)) intersection++;
-  }
-
-  // Calculate union: |A| + |B| - |A ∩ B|
-  const union = setA.size + setB.size - intersection;
-
-  return intersection / union;
+  return jaccardFromSets(tokenize(textA), tokenize(textB));
 }
 
 /**
@@ -60,6 +62,9 @@ export function jaccardSimilarity(textA: string, textB: string): number {
  * @param text - Text to extract key phrases from
  * @returns Array of unique key phrases (lowercased)
  */
+// Pre-compiled regex for tech term extraction (avoids re-creation per call)
+const TECH_TERMS_RE = /\b(?:api|sql|css|html|json|xml|http|rest|graphql|docker|kubernetes|redis|postgres|sqlite|mongodb|react|vue|angular|node|npm|yarn|git|github|aws|gcp|azure)\b/gi;
+
 export function extractKeyPhrases(text: string): string[] {
   const phrases: string[] = [];
 
@@ -82,7 +87,8 @@ export function extractKeyPhrases(text: string): string[] {
   }
 
   // Extract common tech terms that might not be capitalized
-  const techTerms = text.match(/\b(?:api|sql|css|html|json|xml|http|rest|graphql|docker|kubernetes|redis|postgres|sqlite|mongodb|react|vue|angular|node|npm|yarn|git|github|aws|gcp|azure)\b/gi);
+  TECH_TERMS_RE.lastIndex = 0;
+  const techTerms = text.match(TECH_TERMS_RE);
   if (techTerms) {
     phrases.push(...techTerms.map(m => m.toLowerCase()));
   }

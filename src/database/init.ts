@@ -147,6 +147,36 @@ function runMigrations(database: Database.Database): void {
   if (!columnNames.has('transferable')) {
     database.exec('ALTER TABLE memories ADD COLUMN transferable INTEGER DEFAULT 0');
   }
+
+  // Migration: embedding support (Phase 1)
+  if (!columnNames.has('embedding')) {
+    database.exec('ALTER TABLE memories ADD COLUMN embedding BLOB');
+  }
+
+  if (!columnNames.has('embedding_model')) {
+    database.exec('ALTER TABLE memories ADD COLUMN embedding_model TEXT');
+  }
+
+  // Migration: embedding_cache table
+  const cacheTableExists = database.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='embedding_cache'"
+  ).get();
+
+  if (!cacheTableExists) {
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS embedding_cache (
+        provider TEXT NOT NULL,
+        model TEXT NOT NULL,
+        provider_key TEXT NOT NULL,
+        content_hash TEXT NOT NULL,
+        embedding BLOB NOT NULL,
+        dimensions INTEGER NOT NULL,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (provider, model, provider_key, content_hash)
+      );
+      CREATE INDEX IF NOT EXISTS idx_embedding_cache_updated ON embedding_cache(updated_at);
+    `);
+  }
 }
 
 /**
@@ -295,7 +325,9 @@ function getInlineSchema(): string {
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       metadata TEXT DEFAULT '{}',
       scope TEXT DEFAULT 'project',
-      transferable INTEGER DEFAULT 0
+      transferable INTEGER DEFAULT 0,
+      embedding BLOB,
+      embedding_model TEXT
     );
 
     CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
@@ -351,6 +383,11 @@ function getInlineSchema(): string {
       FOREIGN KEY (source_id) REFERENCES memories(id) ON DELETE CASCADE,
       FOREIGN KEY (target_id) REFERENCES memories(id) ON DELETE CASCADE,
       UNIQUE(source_id, target_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS metadata (
+      key TEXT PRIMARY KEY,
+      value TEXT
     );
   `;
 }

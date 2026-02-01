@@ -33,7 +33,7 @@ import {
   shouldDelete,
   processDecay,
 } from './decay.js';
-import { jaccardSimilarity } from './similarity.js';
+import { jaccardFromSets, tokenize } from './similarity.js';
 
 /**
  * Run full consolidation process
@@ -205,26 +205,22 @@ export function mergeSimilarMemories(
     for (const [, group] of groups) {
       if (group.length < 2) continue;
 
+      // Pre-tokenize all texts to avoid redundant tokenization in O(n²) loop
+      const contentTokens = group.map(m => tokenize(m.content as string));
+      const titleTokens = group.map(m => tokenize(m.title as string));
+
       const clustered = new Set<number>();
 
       for (let i = 0; i < group.length; i++) {
         if (clustered.has(i)) continue;
 
         const cluster: number[] = [i];
-        const memA = group[i];
 
         for (let j = i + 1; j < group.length; j++) {
           if (clustered.has(j)) continue;
 
-          const memB = group[j];
-          const contentSim = jaccardSimilarity(
-            memA.content as string,
-            memB.content as string
-          );
-          const titleSim = jaccardSimilarity(
-            memA.title as string,
-            memB.title as string
-          );
+          const contentSim = jaccardFromSets(contentTokens[i], contentTokens[j]);
+          const titleSim = jaccardFromSets(titleTokens[i], titleTokens[j]);
           const combinedSim = contentSim * 0.6 + titleSim * 0.4;
 
           if (combinedSim >= similarityThreshold) {
@@ -598,3 +594,4 @@ export function fullCleanup(
 
   return { consolidation, vacuumed, merged };
 }
+

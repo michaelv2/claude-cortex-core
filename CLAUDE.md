@@ -70,7 +70,7 @@ User Input → remember tool → addMemory() → SQLite + FTS5
 **`src/memory/consolidate.ts`** - Sleep-like consolidation
 - `consolidate()` - Promotes high-salience STM to LTM, deletes decayed memories, updates scores
 - `enforceMemoryLimits()` - Removes lowest-priority when 100 STM / 1000 LTM exceeded
-- `mergeSimilarMemories()` - Clusters similar STM by Jaccard similarity ≥ 0.25, merges into LTM
+- `mergeSimilarMemories()` - Clusters similar STM by Jaccard similarity ≥ 0.25, merges into LTM (pre-tokenized for performance)
 - `evolveSalience()` - Boosts hub memories (highly linked) during consolidation
 - Auto-runs every 4 hours (server.ts:581) + on startup (server.ts:568)
 
@@ -91,8 +91,8 @@ User Input → remember tool → addMemory() → SQLite + FTS5
 - Auto-checkpoint every 100 pages (~400KB) to prevent WAL bloat
 - 100MB hard database size limit (blocks operations), 50MB warning threshold
 - Legacy path fallback: `~/.claude-memory/` → `~/.claude-cortex/`
-- Three tables: `memories`, `memories_fts` (FTS5 virtual table), `sessions`, `memory_links`
-- Migrations handle adding `decayed_score`, `scope`, `transferable` columns
+- Four tables: `memories`, `memories_fts` (FTS5 virtual table), `sessions`, `memory_links`, plus `metadata` key-value table
+- Migrations handle adding `decayed_score`, `scope`, `transferable` columns (and legacy embedding columns for compatibility)
 
 **`src/context/project-context.ts`** - Project auto-detection
 - Detects project from `process.cwd()` path
@@ -190,6 +190,10 @@ The 15 tools are defined in `src/server.ts` and implemented in `src/tools/*.ts`:
 - Indexes on: type, project, category, salience, decayed_score, last_accessed
 - Top search results reinforced (reduces future query latency)
 - WAL checkpoint prevents unbounded growth
+- `getMemoryStats()` uses single `GROUP BY type` query instead of 4 separate `COUNT(*)` queries
+- `mergeSimilarMemories()` pre-tokenizes all texts before the O(n²) comparison loop via `jaccardFromSets()`
+- Tech terms regex in `similarity.ts` hoisted to module-level constant (avoids per-call recompilation)
+- Startup consolidation skipped if it ran within the last hour (tracked in `metadata` table)
 
 ## Common Patterns
 
@@ -209,3 +213,49 @@ When testing:
 - Decay scores change over time (use fixed timestamps in tests)
 - FTS5 tokenization is porter-stemmed (searches match stems, not exact words)
 - Memory limits enforced asynchronously (may not trigger immediately)
+
+## Troubleshooting
+
+### FTS5 Syntax Errors
+
+**Symptom:** `Failed to remember: Error: fts5: syntax error near "X"`
+
+**Cause:** Memory titles or queries contain FTS5 special characters that aren't properly escaped.
+
+**Fixed in version 2.0.0:** The `escapeFts5Query` function now escapes these characters: `- : * ^ ( ) & | . / , { } +`
+
+**Workaround (if using older version):** Avoid these characters in memory titles, or quote the entire title manually.
+
+### Pre-Compact Hook Failures
+
+**Symptom:** Hook returns "Invalid hook input structure" with 0 memories extracted
+
+**Cause:** Claude Code is not passing the expected conversation data structure to the hook.
+
+**Debug Steps:**
+1. Check stderr when running `/compact` - debug logs will show what fields are missing
+2. Verify hook input has: `type`, `context.project`, `context.workingDirectory`, `context.timestamp`, `context.conversationHistory`
+3. File issue with Claude Code if input structure doesn't match `HookInput` interface
+
+**Workaround:** Manually use `mcp__memory__remember` to store important facts instead of relying on automatic extraction.
+
+### Database Lock Errors
+
+**Symptom:** `SQLITE_BUSY: database is locked`
+
+**Cause:** Multiple processes accessing the database simultaneously, or WAL checkpoint in progress.
+
+**Solution:**
+- WAL mode has 10-second `busy_timeout` to handle transient locks
+- If persistent, check for orphaned processes: `ps aux | grep claude-cortex`
+- Remove lock file if no processes running: `rm ~/.claude-cortex/memories.db-lock`
+
+### Memory Not Found After Storage
+
+**Symptom:** Stored memory doesn't appear in recall results
+
+**Possible Causes:**
+1. **Project scoping:** Memory stored in different project scope - try `includeGlobal: true`
+2. **FTS5 tokenization:** Search uses porter stemming - try broader keywords
+3. **Low salience:** Memory decayed quickly - check with `memory_stats` tool
+4. **Database size limit:** Database may be blocked (>100MB) - check size with `du -h ~/.claude-cortex/memories.db`

@@ -131,3 +131,4 @@ export const DELETION_THRESHOLDS: Record<MemoryCategory, number> = {
   todo: 0.25,          // Todos - easier to delete
   custom: 0.22,        // Custom memories
 };
+

@@ -563,10 +563,20 @@ Returns: architecture decisions, patterns, pending items, recent activity.`,
   // AUTO-CONSOLIDATION (Anti-bloat)
   // ============================================
 
-  // Run initial consolidation on startup
+  // Run initial consolidation on startup (skip if recently run)
   try {
-    const startupResult = consolidate();
-    console.error(`[claude-cortex] Startup consolidation: ${startupResult.consolidated} promoted, ${startupResult.deleted} deleted`);
+    const _db = initDatabase(config.dbPath);
+    // Ensure metadata table exists
+    _db.exec(`CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT)`);
+    const lastRun = _db.prepare("SELECT value FROM metadata WHERE key = 'last_consolidation'").get() as { value: string } | undefined;
+    const ONE_HOUR = 3600000;
+    if (lastRun && Date.now() - Number(lastRun.value) < ONE_HOUR) {
+      console.error('[claude-cortex] Skipping startup consolidation (ran within the last hour)');
+    } else {
+      const startupResult = consolidate();
+      _db.prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('last_consolidation', ?)").run(String(Date.now()));
+      console.error(`[claude-cortex] Startup consolidation: ${startupResult.consolidated} promoted, ${startupResult.deleted} deleted`);
+    }
   } catch (e) {
     console.error('[claude-cortex] Startup consolidation failed:', e);
   }
@@ -582,6 +592,11 @@ Returns: architecture decisions, patterns, pending items, recent activity.`,
   setInterval(() => {
     try {
       const result = fullCleanup();
+      // Record consolidation time
+      try {
+        const _db2 = initDatabase(config.dbPath);
+        _db2.prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('last_consolidation', ?)").run(String(Date.now()));
+      } catch { /* non-critical */ }
       console.error(`[claude-cortex] Scheduled cleanup: ${result.consolidation.consolidated} promoted, ${result.consolidation.deleted} deleted, ${result.merged} merged, vacuumed: ${result.vacuumed}`);
     } catch (e) {
       console.error('[claude-cortex] Scheduled cleanup failed:', e);

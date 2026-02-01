@@ -17,7 +17,7 @@ import {
 } from '../hooks/utils.js';
 import { extractMemoriesFromConversation } from '../hooks/extraction.js';
 import { initDatabase } from '../database/init.js';
-import { addMemory, getMemorySummariesForDedupe } from '../memory/store.js';
+import { addMemory, getMemorySummariesForDedupe, searchMemories } from '../memory/store.js';
 
 /**
  * Main PreCompact hook logic
@@ -80,6 +80,18 @@ async function runPreCompactHook(input: HookInput): Promise<PreCompactOutput> {
 
   for (const memory of extractedMemories) {
     try {
+      // Dedup check: skip if a very similar memory already exists
+      const existing = await searchMemories({
+        query: memory.title,
+        limit: 1,
+        project: context.project,
+        includeGlobal: true,
+      });
+      if (existing.length > 0 && existing[0].relevanceScore > 0.8) {
+        logHook('info', `Skipping near-duplicate: "${memory.title}" (matched existing with score ${existing[0].relevanceScore.toFixed(2)})`);
+        continue;
+      }
+
       const result = addMemory({
         title: memory.title,
         content: memory.content,
@@ -122,6 +134,18 @@ async function main(): Promise<void> {
   try {
     // Read input from stdin
     const input = await readStdin();
+
+    // Debug logging to diagnose input structure issues
+    logHook('debug', `Received input type: ${input?.type}`);
+    logHook('debug', `Has context: ${!!input?.context}`);
+    if (input?.context) {
+      logHook('debug', `Context keys: ${Object.keys(input.context).join(', ')}`);
+      logHook('debug', `Has conversationHistory: ${!!input.context.conversationHistory}`);
+      logHook('debug', `ConversationHistory is array: ${Array.isArray(input.context.conversationHistory)}`);
+      if (Array.isArray(input.context.conversationHistory)) {
+        logHook('debug', `ConversationHistory length: ${input.context.conversationHistory.length}`);
+      }
+    }
 
     // Validate input
     if (!validateHookInput(input)) {
