@@ -113,6 +113,8 @@ The system automatically detects importance, categorizes, and manages storage.`,
         .describe('Memory scope: project (default) or global (cross-project)'),
       transferable: z.boolean().optional()
         .describe('Whether this memory can be transferred to other projects'),
+      metadata: z.record(z.unknown()).optional()
+        .describe('Arbitrary metadata to attach to the memory'),
     },
     async (args) => {
       const result = await executeRemember(args);

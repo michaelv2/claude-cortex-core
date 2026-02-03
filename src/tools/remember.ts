@@ -29,6 +29,8 @@ export const rememberSchema = z.object({
     .describe('Memory scope: project (default) or global (cross-project)'),
   transferable: z.boolean().optional()
     .describe('Whether this memory can be transferred to other projects'),
+  metadata: z.record(z.unknown()).optional()
+    .describe('Arbitrary metadata to attach to the memory'),
 });
 
 export type RememberInput = z.infer<typeof rememberSchema>;
@@ -104,6 +106,7 @@ export async function executeRemember(input: RememberInput): Promise<{
       salience: salienceOverride,
       scope: input.scope,
       transferable: input.transferable,
+      metadata: input.metadata,
     });
 
     // Auto-detect and create relationships with existing memories
