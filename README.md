@@ -350,8 +350,8 @@ import_memories({ data: "[...]" })
 ## How It Works
 
 ### Memory Types
-- **Short-term** (STM) - Recent, working memories (max 100)
-- **Long-term** (LTM) - Consolidated, important memories (max 1000)
+- **Short-term** (STM) - Recent, working memories (max 250)
+- **Long-term** (LTM) - Consolidated, important memories (max 5000)
 - **Episodic** - Session markers and timestamps
 
 ### Categories
@@ -372,7 +372,7 @@ import_memories({ data: "[...]" })
 Runs automatically every 4 hours + on server startup:
 1. Promotes high-salience STM → LTM
 2. Deletes decayed memories below threshold
-3. Enforces memory limits (100 STM, 1000 LTM)
+3. Enforces memory limits (250 STM, 5000 LTM)
 4. Updates decay scores
 5. Boosts hub memories (highly linked)
 
@@ -406,7 +406,7 @@ Legacy path `~/.claude-memory/` still works for backward compatibility.
 - 100MB database hard limit
 - Auto-consolidation every 4 hours
 - Auto-vacuum after deletions
-- 100 STM / 1000 LTM enforced limits
+- 250 STM / 5000 LTM enforced limits
 
 ## Development
 
