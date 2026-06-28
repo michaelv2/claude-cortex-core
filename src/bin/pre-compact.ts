@@ -4,12 +4,14 @@
  * Invoked by Claude Code before context compaction to auto-extract memories
  */
 
-import { HookInput, PreCompactOutput } from '../hooks/types.js';
+import { readFileSync } from 'fs';
+import { HookInput, PreCompactOutput, ConversationMessage } from '../hooks/types.js';
 import { getPreCompactConfig, isHookEnabled } from '../hooks/hook-config.js';
 import {
   readStdin,
   writeOutput,
   validateHookInput,
+  inferProjectFromCwd,
   formatErrorOutput,
   safeHookOperation,
   measureTimeAsync,
@@ -18,6 +20,38 @@ import {
 import { extractMemoriesFromConversation } from '../hooks/extraction.js';
 import { initDatabase } from '../database/init.js';
 import { addMemory, getMemorySummariesForDedupe, searchMemories } from '../memory/store.js';
+
+/**
+ * Read conversation history from the transcript JSONL file.
+ * Each line is a JSON object; we extract user/assistant messages.
+ */
+function readTranscript(transcriptPath: string): ConversationMessage[] {
+  const messages: ConversationMessage[] = [];
+  try {
+    const content = readFileSync(transcriptPath, 'utf-8');
+    for (const line of content.split('\n')) {
+      if (!line.trim()) continue;
+      try {
+        const entry = JSON.parse(line);
+        if ((entry.type === 'user' || entry.type === 'assistant') && entry.message?.content) {
+          const contentStr = typeof entry.message.content === 'string'
+            ? entry.message.content
+            : JSON.stringify(entry.message.content);
+          messages.push({
+            role: entry.message.role || entry.type,
+            content: contentStr,
+            timestamp: entry.timestamp,
+          });
+        }
+      } catch {
+        // Skip malformed lines
+      }
+    }
+  } catch (error) {
+    logHook('error', `Failed to read transcript at ${transcriptPath}: ${error}`);
+  }
+  return messages;
+}
 
 /**
  * Main PreCompact hook logic
@@ -36,11 +70,12 @@ async function runPreCompactHook(input: HookInput): Promise<PreCompactOutput> {
     };
   }
 
-  const { context } = input;
-  const conversationHistory = context.conversationHistory || [];
+  const conversationHistory = input.transcript_path
+    ? readTranscript(input.transcript_path)
+    : [];
 
   if (conversationHistory.length === 0) {
-    logHook('warn', 'No conversation history provided');
+    logHook('warn', 'No conversation history found in transcript');
     return {
       success: true,
       memoriesExtracted: 0,
@@ -54,9 +89,11 @@ async function runPreCompactHook(input: HookInput): Promise<PreCompactOutput> {
   // Initialize database
   initDatabase();
 
+  const project = inferProjectFromCwd(input.cwd);
+
   // Fetch existing memories to avoid duplicates (no scoring, no side effects)
   const existingMemories = getMemorySummariesForDedupe({
-    project: context.project,
+    project,
     limit: 100,
     includeGlobal: true,
   });
@@ -84,7 +121,7 @@ async function runPreCompactHook(input: HookInput): Promise<PreCompactOutput> {
       const existing = await searchMemories({
         query: memory.title,
         limit: 1,
-        project: context.project,
+        project,
         includeGlobal: true,
       });
       if (existing.length > 0 && existing[0].relevanceScore > 0.8) {
@@ -99,10 +136,10 @@ async function runPreCompactHook(input: HookInput): Promise<PreCompactOutput> {
         tags: memory.tags,
         salience: memory.salience,
         type: 'long_term',
-        project: context.project,
+        project,
         metadata: {
           source: memory.source,
-          extractedAt: context.timestamp,
+          extractedAt: new Date().toISOString(),
         },
       });
 
@@ -135,25 +172,13 @@ async function main(): Promise<void> {
     // Read input from stdin
     const input = await readStdin();
 
-    // Debug logging to diagnose input structure issues
-    logHook('debug', `Received input type: ${input?.type}`);
-    logHook('debug', `Has context: ${!!input?.context}`);
-    if (input?.context) {
-      logHook('debug', `Context keys: ${Object.keys(input.context).join(', ')}`);
-      logHook('debug', `Has conversationHistory: ${!!input.context.conversationHistory}`);
-      logHook('debug', `ConversationHistory is array: ${Array.isArray(input.context.conversationHistory)}`);
-      if (Array.isArray(input.context.conversationHistory)) {
-        logHook('debug', `ConversationHistory length: ${input.context.conversationHistory.length}`);
-      }
-    }
-
     // Validate input
     if (!validateHookInput(input)) {
       throw new Error('Invalid hook input structure');
     }
 
-    if (input.type !== 'preCompact') {
-      throw new Error(`Invalid hook type: ${input.type}, expected preCompact`);
+    if (input.hook_event_name !== 'PreCompact') {
+      throw new Error(`Invalid hook type: ${input.hook_event_name}, expected PreCompact`);
     }
 
     // Get configuration

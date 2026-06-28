@@ -11,6 +11,7 @@ import {
   writeMarkdown,
   writeOutput,
   validateHookInput,
+  inferProjectFromCwd,
   formatErrorOutput,
   safeHookOperation,
   measureTimeAsync,
@@ -40,8 +41,7 @@ async function runSessionStartHook(input: HookInput): Promise<SessionStartOutput
     };
   }
 
-  const { context } = input;
-  const project = context.project;
+  const project = inferProjectFromCwd(input.cwd);
 
   if (!project || project === '*') {
     logHook('warn', 'No specific project provided, skipping context injection');
@@ -99,8 +99,8 @@ async function main(): Promise<void> {
       throw new Error('Invalid hook input structure');
     }
 
-    if (input.type !== 'sessionStart') {
-      throw new Error(`Invalid hook type: ${input.type}, expected sessionStart`);
+    if (input.hook_event_name !== 'SessionStart') {
+      throw new Error(`Invalid hook type: ${input.hook_event_name}, expected SessionStart`);
     }
 
     // Get configuration

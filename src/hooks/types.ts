@@ -4,9 +4,9 @@
  */
 
 /**
- * Hook type identifiers
+ * Hook event names as sent by Claude Code
  */
-export type HookType = 'preCompact' | 'sessionStart';
+export type HookEventName = 'PreCompact' | 'SessionStart';
 
 /**
  * Conversation message from Claude Code
@@ -18,21 +18,18 @@ export interface ConversationMessage {
 }
 
 /**
- * Context provided by Claude Code to hooks
- */
-export interface HookContext {
-  project: string;
-  workingDirectory: string;
-  timestamp: string;
-  conversationHistory?: ConversationMessage[];
-}
-
-/**
  * Input structure for all hooks (from stdin)
+ * Matches the actual format sent by Claude Code.
  */
 export interface HookInput {
-  type: HookType;
-  context: HookContext;
+  session_id: string;
+  cwd: string;
+  hook_event_name: HookEventName;
+  transcript_path?: string;
+  source?: string;       // SessionStart: "startup" | "resume" | "clear" | "compact"
+  trigger?: string;      // PreCompact: "auto" | "manual"
+  model?: string;
+  agent_type?: string;
 }
 
 /**

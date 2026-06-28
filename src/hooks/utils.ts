@@ -106,34 +106,37 @@ export async function safeHookOperation<T>(
 }
 
 /**
- * Validate hook input structure
+ * Validate hook input structure against Claude Code's actual format
  */
 export function validateHookInput(input: any): input is HookInput {
   if (!input || typeof input !== 'object') {
     return false;
   }
 
-  if (!input.type || !['preCompact', 'sessionStart'].includes(input.type)) {
+  if (!input.hook_event_name || !['PreCompact', 'SessionStart'].includes(input.hook_event_name)) {
     return false;
   }
 
-  if (!input.context || typeof input.context !== 'object') {
+  if (!input.cwd || typeof input.cwd !== 'string') {
     return false;
   }
 
-  const { context } = input;
-  if (!context.project || !context.workingDirectory || !context.timestamp) {
+  if (!input.session_id || typeof input.session_id !== 'string') {
     return false;
   }
 
-  // PreCompact requires conversation history
-  if (input.type === 'preCompact') {
-    if (!Array.isArray(context.conversationHistory)) {
-      return false;
-    }
+  if (input.hook_event_name === 'PreCompact' && !input.transcript_path) {
+    return false;
   }
 
   return true;
+}
+
+/**
+ * Infer project name from cwd by taking the last path component
+ */
+export function inferProjectFromCwd(cwd: string): string {
+  return cwd.split('/').filter(Boolean).pop() || 'unknown';
 }
 
 /**
